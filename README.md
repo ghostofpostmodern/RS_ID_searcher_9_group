@@ -93,7 +93,7 @@ https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/1801133
 ### 1. Клонирование репозитория
 
 ```bash
-git clone https://github.com/yourname/snp-frequency-bot.git
+git clone https://github.com/ghostofpostmodern/RS_ID_searcher_9_group
 cd snp-frequency-bot
 ```
 
