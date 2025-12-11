@@ -197,7 +197,26 @@ snp-frequency-bot/
 
 ## 📐 Места для UML / BPMN диаграмм
 
+sequenceDiagram
+    participant U as User
+    participant B as Bot
+    participant R as Redis
+    participant N as NCBI
+    participant A as Analyzer
+    participant P as Plot
 
+    U->>B: /get rsID
+    B->>R: GET snp:rsID
+    R-->>B: cache miss
+    B->>N: GET /variation/v0/refsnp/{id}
+    N-->>B: JSON
+    B->>A: summarize_snp(JSON)
+    A-->>B: SnpSummary
+    B->>P: generate_plots(SnpSummary)
+    P-->>B: images[]
+    B->>R: SET snp:rsID
+    B->>R: ZADD history:user rsID
+    B-->>U: текст + графики
 
 
 
