@@ -1,6 +1,6 @@
 import json
 import time
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import redis.asyncio as redis
 
@@ -34,25 +34,67 @@ class CacheManager:
         """
         Храним историю как sorted set:
         - ключ: history:{user_id}
-        - score: Unix timestamp
+        - score: Unix timestamp (секунды)
         - member: rsid
         """
         key = f"history:{user_id}"
         now = time.time()
         await self._redis.zadd(key, {rsid: now})
-        # Можно (не обязательно) поставить TTL на историю, например на 2 дня
+        # TTL истории — 2 суток
         await self._redis.expire(key, 2 * 86400)
 
     async def get_history(self, user_id: int) -> List[str]:
         """
         Возвращает список rsID за последние 24 часа.
+
+        Если по какой-то причине ZSET пуст (или ключ не в том формате),
+        пробуем старый вариант — LIST (на случай старой версии кода).
         """
         key = f"history:{user_id}"
         now = time.time()
         day_ago = now - 86400
-        # Получаем все элементы с score в диапазоне [day_ago, now]
-        rsids = await self._redis.zrangebyscore(key, min=day_ago, max=now)
-        return rsids
+
+        # сначала пробуем ZSET
+        try:
+            rsids = await self._redis.zrangebyscore(key, min=day_ago, max=now)
+        except Exception:
+            rsids = []
+
+        if rsids:
+            return rsids
+
+        # fallback: старый формат LIST (если вдруг остался)
+        try:
+            rsids_list = await self._redis.lrange(key, 0, 9)
+        except Exception:
+            rsids_list = []
+
+        # без фильтра по времени, просто последние до 10 штук
+        return rsids_list
+
+    # ---------- RATE LIMITING ----------
+
+    async def register_request_and_check_limit(
+        self, user_id: int, limit: int
+    ) -> Tuple[bool, int]:
+        """
+        Инкрементирует счётчик запросов пользователя за текущий час
+        и возвращает (allowed, remaining).
+
+        Ключ: rate:{user_id}:{hour_bucket}
+        """
+        now = int(time.time())
+        hour_bucket = now // 3600
+        key = f"rate:{user_id}:{hour_bucket}"
+
+        current = await self._redis.incr(key)
+        if current == 1:
+            # первый запрос в этом часе — ставим TTL
+            await self._redis.expire(key, 3600)
+
+        remaining = max(limit - current, 0)
+        allowed = current <= limit
+        return allowed, remaining
 
 
 cache_manager = CacheManager()
