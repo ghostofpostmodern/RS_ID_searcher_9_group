@@ -43,11 +43,16 @@ def _compute_hardy_weinberg(p: float, q: float) -> GenotypeFrequencies:
 
 
 def summarize_snp(rsid: str, raw: Dict[str, Any]) -> SnpSummary:
-    """Упрощённый парсер структуры ответа NCBI dbSNP.
+    """
+    Разбор ответа NCBI dbSNP.
 
-    Структура API может меняться, поэтому здесь используются защитные .get()
-    и фильтрация по наличию частот. При необходимости логику парсинга
-    нужно уточнить под реальный формат JSON.
+    Берём частоты из:
+      primary_snapshot_data.allele_annotations[*].frequency[*]
+
+    Используем схему:
+      MAF = allele_count / total_count
+      ref_allele = observation.deleted_sequence
+      alt_allele = observation.inserted_sequence
     """
     primary = raw.get("primary_snapshot_data", {})
     allele_annotations = primary.get("allele_annotations", [])
@@ -55,31 +60,49 @@ def summarize_snp(rsid: str, raw: Dict[str, Any]) -> SnpSummary:
     populations: List[PopulationSummary] = []
 
     for ann in allele_annotations:
-        freqs = ann.get("frequency", [])
+        freqs = ann.get("frequency") or []
         for freq in freqs:
+            obs = freq.get("observation") or {}
             study = freq.get("study_name") or "unknown"
-            allele = freq.get("allele")
-            if allele is None:
-                continue
-            try:
-                alt_freq = float(freq.get("frequency"))
-                ref_freq = 1.0 - alt_freq
-            except (TypeError, ValueError):
+
+            ref_seq = obs.get("deleted_sequence")
+            alt_seq = obs.get("inserted_sequence")
+
+            allele_count = freq.get("allele_count")
+            total_count = freq.get("total_count")
+
+            # базовая защита от мусора
+            if (
+                allele_count is None
+                or total_count in (None, 0)
+            ):
                 continue
 
-            allele_number = freq.get("allele_number") or 0
+            try:
+                allele_count = float(allele_count)
+                total_count = float(total_count)
+                maf = allele_count / total_count
+            except (TypeError, ValueError, ZeroDivisionError):
+                continue
+
+            # если каких-то последовательностей нет — всё равно берём, как есть
+            ref_allele = ref_seq or "-"
+            alt_allele = alt_seq or "-"
+
+            alt_freq = float(maf)
+            ref_freq = max(0.0, 1.0 - alt_freq)
 
             geno = _compute_hardy_weinberg(ref_freq, alt_freq)
 
             populations.append(
                 PopulationSummary(
                     study=study,
-                    ref_allele="REF",
-                    alt_allele=str(allele),
+                    ref_allele=ref_allele,
+                    alt_allele=alt_allele,
                     freq_ref=ref_freq,
                     freq_alt=alt_freq,
                     genotype_freqs=geno,
-                    total_alleles=int(allele_number),
+                    total_alleles=int(total_count),
                 )
             )
 
