@@ -137,10 +137,7 @@ async def _process_rsid(message: Message, rsid: str, uid: int | None = None) -> 
         return
 
     logging.info(
-        "Processing rsid=%s user_id=%s remaining=%s",
-        rsid,
-        user_id,
-        remaining,
+        f"Processing rsid={rsid} remaining={remaining}",
     )
 
     await message.answer(f"Запрашиваю данные для {rsid}...")
