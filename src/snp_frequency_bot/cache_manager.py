@@ -1,5 +1,6 @@
 import json
 import time
+import logging
 from typing import Optional, List, Tuple
 
 import redis.asyncio as redis
@@ -37,6 +38,7 @@ class CacheManager:
         key = f"snp:{rsid}:v1"
         data = await self._redis.get(key)
         if not data:
+            logging.info("No data found in cache")
             return None
 
         try:
@@ -67,6 +69,7 @@ class CacheManager:
 
         await self._redis.zadd(key, {rsid: now})
         await self._redis.expire(key, 2 * 86400)  # 2 дня
+        logging.info("Cached an entry into user history")
 
     async def get_history(self, user_id: int) -> List[str]:
         """
@@ -78,6 +81,7 @@ class CacheManager:
         now = time.time()
         day_ago = now - 86400
 
+        logging.info("Getting user request history")
         try:
             rsids = await self._redis.zrangebyscore(key, min=day_ago, max=now)
         except Exception:

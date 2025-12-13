@@ -119,7 +119,8 @@ async def handle_history(message: Message) -> None:
     await message.answer("Ваши запросы за последние 24 часа:\n" + "\n".join(lines))
 
 
-async def _process_rsid(message: Message, rsid: str) -> None:
+async def _process_rsid(message: Message, rsid: str, uid: int | None = None) -> None:
+    user_id = message.from_user.id if uid is None else uid
     # Нормализуем rsid (регистр)
     rsid = rsid.strip().lower()
 
@@ -138,7 +139,7 @@ async def _process_rsid(message: Message, rsid: str) -> None:
     logging.info(
         "Processing rsid=%s user_id=%s remaining=%s",
         rsid,
-        message.from_user.id,
+        user_id,
         remaining,
     )
 
@@ -148,7 +149,7 @@ async def _process_rsid(message: Message, rsid: str) -> None:
     cached = await cache_manager.get_snp_result(rsid)
     if cached:
         logging.info("Cache hit for %s", rsid)
-        await cache_manager.add_history_entry(message.from_user.id, rsid)
+        await cache_manager.add_history_entry(user_id, rsid)
         await _send_result(message, cached)
         return
 
@@ -187,10 +188,11 @@ async def _process_rsid(message: Message, rsid: str) -> None:
         "images": images,
         "pdf": pdf_path,
     }
+    logging.info(f"Caching the request...")
 
     # --- 7. Кэш + история ---
     await cache_manager.set_snp_result(rsid, payload)
-    await cache_manager.add_history_entry(message.from_user.id, rsid)
+    await cache_manager.add_history_entry(user_id, rsid)
 
     # --- 8. Отправка результата ---
     await _send_result(message, payload)
@@ -347,8 +349,7 @@ async def handle_example_callback(callback: CallbackQuery) -> None:
     # закрываем "часики" у кнопки
     await callback.answer()
 
-    if callback.message:
-        await _process_rsid(callback.message, rsid)
+    await _process_rsid(callback.message, rsid, uid=callback.from_user.id)
 
 
 async def main() -> None:
